@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"github.com/clearcodecn/flowers/proto"
 	"fmt"
+	"github.com/clearcodecn/flowers/proto"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -144,6 +144,9 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 
 	go func() {
 		defer c.wg.Done()
+		defer func() {
+			recover()
+		}()
 		for b := range reqCh {
 			if c.opt.Cipher != nil {
 				var err error
@@ -162,6 +165,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 		}
 	}()
 	go func() {
+		recover()
 		defer c.wg.Done()
 		for b := range respCh {
 			if c.opt.Cipher != nil {
@@ -179,6 +183,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	}()
 	go func() {
 		defer func() {
+			recover()
 			c.wg.Done()
 			close(reqCh)
 			close(respCh)
@@ -196,6 +201,9 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 		}
 	}()
 	go func() {
+		defer func() {
+			recover()
+		}()
 		defer c.wg.Done()
 		for {
 			resp, err := client.Recv()
