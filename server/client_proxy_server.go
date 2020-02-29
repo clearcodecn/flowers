@@ -96,7 +96,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	} else {
 		method, host, err = FindHost(b[:n])
 		if err != nil {
-			logrus.Errorf("parse hostPort failed: %s %s", string(b[:n]), err)
+			logrus.Errorf("parse hostPort failed: %s %s", err)
 			return
 		}
 		if method == http.MethodConnect {
