@@ -1,0 +1,16 @@
+syntax="proto3";
+
+package proto;
+
+message Request {
+    string host = 1;
+    bytes body = 4;
+}
+
+message Response{
+     bytes body = 1;
+}
+
+service ProxyService{
+    rpc Proxy(stream Request) returns(stream Response);
+}
