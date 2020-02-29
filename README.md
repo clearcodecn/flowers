@@ -12,10 +12,10 @@ go get github.com/clearcodecn/flowers/...
 # Run Server
 
 ```shell script
-flowers server
+flowers server -p password
 ```
 
 # Run Client 
 ```shell script
-flowers client -a 0.0.0.0:9011 -s 127.0.0.1:9012
+flowers client -a 0.0.0.0:9011 -s 127.0.0.1:9012 -p password
 ```
