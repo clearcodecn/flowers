@@ -27,6 +27,7 @@ func init() {
 func run(cmd *cobra.Command, args []string) error {
 	s := server.NewProxyServer(
 		server.WithServerProxyAddress(argServerAddress),
+		server.WithCipher("123456"),
 	)
 	sig.RegisterClose(func() {
 		if err := s.Stop(); err != nil {

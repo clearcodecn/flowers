@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"flowers/proto"
-	"fmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -67,6 +66,18 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 	var (
 		conn net.Conn
 	)
+	if s.opt.Cipher != nil {
+		b, err := s.opt.Cipher.Decode([]byte(req.Host))
+		if err != nil {
+			logrus.Errorf("cipher data failed: %s", err)
+			return errors.New("invalid password")
+		}
+		req.Host = string(b)
+	}
+
+	if req.Host == "" {
+		return errors.New("invalid host")
+	}
 	if req.Host != "" {
 		// fist package
 		conn, err = net.Dial("tcp", req.Host)
@@ -90,7 +101,14 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 	go func() {
 		defer s.wg.Done()
 		for b := range reqChan {
-			fmt.Println("len req -> ", len(b))
+			if s.opt.Cipher != nil {
+				var err error
+				b, err = s.opt.Cipher.Decode(b)
+				if err != nil {
+					logrus.Errorf("cipher data failed: %s", err)
+					return
+				}
+			}
 			if _, err := conn.Write(b); err != nil {
 				return
 			}
@@ -100,6 +118,14 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 	go func() {
 		defer s.wg.Done()
 		for b := range respChan {
+			if s.opt.Cipher != nil {
+				var err error
+				b, err = s.opt.Cipher.Encode(b)
+				if err != nil {
+					logrus.Errorf("cipher data failed: %s", err)
+					return
+				}
+			}
 			if err := stream.Send(&proto.Response{
 				Body: b,
 			}); err != nil {
@@ -114,7 +140,7 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 			close(reqChan)
 			close(respChan)
 			atomic.StoreInt64(&closed, 1)
-			//conn.Close()
+			conn.Close()
 			s.wg.Done()
 		}()
 		for {
@@ -131,7 +157,6 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 		if err != nil {
 			return err
 		}
-		fmt.Println("len resp", len(b), string(b[:n]))
 		if atomic.LoadInt64(&closed) == 0 {
 			respChan <- b[:n]
 		}

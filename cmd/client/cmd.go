@@ -33,6 +33,7 @@ func run(cmd *cobra.Command, args []string) error {
 	client, err := server.NewClientProxyServer(
 		server.WithClientProxyAddress(argClientAddress),
 		server.WithServerProxyAddress(argServerAddress),
+		server.WithCipher("123456"),
 	)
 	if err != nil {
 		return err

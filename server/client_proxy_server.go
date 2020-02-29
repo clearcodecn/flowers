@@ -28,6 +28,8 @@ type ClientProxyServer struct {
 type ClientProxyServerOptions struct {
 	Address       string
 	ServerAddress string
+
+	Password string
 }
 
 func NewClientProxyServer(opts ...Options) (*ClientProxyServer, error) {
@@ -97,7 +99,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			return
 		}
 	} else {
-		method, host, err = findHost(b[:n])
+		method, host, err = FindHost(b[:n])
 		if err != nil {
 			logrus.Errorf("parse hostPort failed: %s", err)
 			return
@@ -111,13 +113,25 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 		logrus.Errorf("connect server failed: %s", err)
 		return
 	}
+
+	logrus.Infof("proxy for: %s", host)
+
+	if c.opt.Cipher != nil {
+		b, err := c.opt.Cipher.Encode([]byte(host))
+		if err != nil {
+			logrus.Errorf("cipher data failed: %s", err)
+			return
+		}
+		host = string(b)
+	}
+
 	req := &proto.Request{
 		Host: host,
 	}
 	if err := client.Send(req); err != nil {
+		logrus.Infof("can not connect to remote server: %s", err)
 		return
 	}
-
 	c.wg.Add(4)
 	var (
 		reqCh        = make(chan []byte, 10)
@@ -131,10 +145,18 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	go func() {
 		defer c.wg.Done()
 		for b := range reqCh {
-			fmt.Println("req --> ", len(b), string(b), b)
+			if c.opt.Cipher != nil {
+				var err error
+				b, err = c.opt.Cipher.Encode(b)
+				if err != nil {
+					logrus.Errorf("cipher data failed: %s", err)
+					return
+				}
+			}
 			if err := client.Send(&proto.Request{
 				Body: b,
 			}); err != nil {
+				logrus.Errorf("can not request to server: %s", err)
 				return
 			}
 		}
@@ -142,6 +164,14 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	go func() {
 		defer c.wg.Done()
 		for b := range respCh {
+			if c.opt.Cipher != nil {
+				var err error
+				b, err = c.opt.Cipher.Decode(b)
+				if err != nil {
+					logrus.Errorf("cipher data failed: %s", err)
+					return
+				}
+			}
 			if _, err := conn.Write(b); err != nil {
 				return
 			}
@@ -172,7 +202,6 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			if err != nil {
 				return
 			}
-			fmt.Println("resp -->", string(b))
 			if atomic.LoadInt64(&closed) == 0 {
 				respCh <- resp.Body
 			}

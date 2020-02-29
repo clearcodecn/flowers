@@ -5,6 +5,8 @@ type Option struct {
 	ClientProxyAddress string
 
 	ServerProxyAddress string
+
+	Cipher Cipher
 }
 
 type Options func(*Option)
@@ -24,5 +26,15 @@ func WithClientProxyAddress(address string) Options {
 func WithServerProxyAddress(address string) Options {
 	return func(options *Option) {
 		options.ServerProxyAddress = address
+	}
+}
+
+func WithCipher(password string) Options {
+	return func(option *Option) {
+		var err error
+		option.Cipher, err = NewDictCipher([]byte(password))
+		if err != nil {
+			panic(err)
+		}
 	}
 }

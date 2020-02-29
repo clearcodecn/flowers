@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-func findHost(data []byte) (method string, host string, err error) {
+//FindHost
+func FindHost(data []byte) (method string, host string, err error) {
 	arr := strings.Split(string(data), "\r\n")
 	if len(arr) < 2 {
 		err = errors.New("invalid http request part")
