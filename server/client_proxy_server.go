@@ -96,7 +96,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	} else {
 		method, host, err = FindHost(b[:n])
 		if err != nil {
-			logrus.Errorf("parse hostPort failed: %s", err)
+			logrus.Errorf("parse hostPort failed: %s %s", string(b[:n]), err)
 			return
 		}
 		if method == http.MethodConnect {
@@ -132,6 +132,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 
 	var closeFunc = func() {
 		o.Do(func() {
+			logrus.Infof("closed %s", host)
 			closed.SetTrue()
 			close(reqCh)
 			close(respCh)
@@ -142,9 +143,6 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			logrus.Errorf("panic: %s", err)
 		}
 	}
-
-	defer closeFunc()
-
 	go func() {
 		defer closeFunc()
 

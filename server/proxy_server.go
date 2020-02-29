@@ -72,10 +72,10 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 	} else {
 		return errors.Errorf("invalid host: %s", req.Host)
 	}
-	return s.pipe(stream, conn)
+	return s.pipe(stream, conn, req.Host)
 }
 
-func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn) error {
+func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn, host string) error {
 	var (
 		reqChan  = make(chan []byte, 10)
 		respChan = make(chan []byte, 10)
@@ -84,6 +84,7 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 	)
 	var closeFunc = func() {
 		o.Do(func() {
+			logrus.Infof("closed %s", host)
 			closed.SetTrue()
 			close(reqChan)
 			close(respChan)
