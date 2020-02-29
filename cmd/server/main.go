@@ -23,7 +23,7 @@ var (
 
 func init() {
 	Cmd.Flags().StringVarP(&argServerAddress, "saddr", "s", ":9012", "server listen grpc address")
-	Cmd.Flags().StringVarP(&argServerAddress, "password", "p", "helloworld", "server password")
+	Cmd.Flags().StringVarP(&argPassword, "password", "p", "helloworld", "server password")
 }
 
 func run(cmd *cobra.Command, args []string) error {
