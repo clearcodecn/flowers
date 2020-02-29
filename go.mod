@@ -1,4 +1,4 @@
-module flowers
+module github.com/clearcodecn/flowers
 
 go 1.13
 

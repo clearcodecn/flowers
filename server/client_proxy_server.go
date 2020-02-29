@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"flowers/proto"
+	"github.com/clearcodecn/flowers/proto"
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

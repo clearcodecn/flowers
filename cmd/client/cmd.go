@@ -1,8 +1,8 @@
 package client
 
 import (
-	"flowers/server"
-	"flowers/sig"
+	"github.com/clearcodecn/flowers/server"
+	"github.com/clearcodecn/flowers/sig"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
