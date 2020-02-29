@@ -92,6 +92,9 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 }
 
 func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn) error {
+	defer func() {
+		recover()
+	}()
 	var (
 		reqChan        = make(chan []byte, 10)
 		respChan       = make(chan []byte, 10)
@@ -100,6 +103,9 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer func() {
+			recover()
+		}()
 		for b := range reqChan {
 			if s.opt.Cipher != nil {
 				var err error
@@ -116,6 +122,9 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 	}()
 	s.wg.Add(1)
 	go func() {
+		defer func() {
+			recover()
+		}()
 		defer s.wg.Done()
 		for b := range respChan {
 			if s.opt.Cipher != nil {
@@ -142,6 +151,10 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 			atomic.StoreInt64(&closed, 1)
 			conn.Close()
 			s.wg.Done()
+		}()
+
+		defer func() {
+			recover()
 		}()
 		for {
 			req, err := stream.Recv()
