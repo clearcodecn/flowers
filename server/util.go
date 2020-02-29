@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 )
 
 //FindHost
@@ -32,3 +33,8 @@ func FindHost(data []byte) (method string, host string, err error) {
 	}
 	return
 }
+
+type atomicBool int32
+
+func (b *atomicBool) Bool() bool { return atomic.LoadInt32((*int32)(b)) != 0 }
+func (b *atomicBool) SetTrue()   { atomic.StoreInt32((*int32)(b), 1) }

@@ -8,15 +8,12 @@ import (
 	"google.golang.org/grpc"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 type ProxyServer struct {
 	opt *Option
-	wg  sync.WaitGroup
-
-	gs *grpc.Server
+	gs  *grpc.Server
 }
 
 func NewProxyServer(opts ...Options) *ProxyServer {
@@ -47,7 +44,6 @@ func (s *ProxyServer) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	go func() {
 		s.gs.GracefulStop()
-		s.wg.Wait()
 		cancel()
 	}()
 
@@ -56,9 +52,6 @@ func (s *ProxyServer) Stop() error {
 }
 
 func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
-	s.wg.Add(1)
-	defer s.wg.Done()
-
 	req, err := stream.Recv()
 	if err != nil {
 		return errors.Wrap(err, "recv stream failed")
@@ -66,15 +59,6 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 	var (
 		conn net.Conn
 	)
-	if s.opt.Cipher != nil {
-		b, err := s.opt.Cipher.Decode([]byte(req.Host))
-		if err != nil {
-			logrus.Errorf("cipher data failed: %s", err)
-			return errors.New("invalid password")
-		}
-		req.Host = string(b)
-	}
-
 	if req.Host == "" {
 		return errors.New("invalid host")
 	}
@@ -92,48 +76,41 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 }
 
 func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn) error {
-	defer func() {
-		recover()
-	}()
 	var (
-		reqChan        = make(chan []byte, 10)
-		respChan       = make(chan []byte, 10)
-		closed   int64 = 0
+		reqChan  = make(chan []byte, 10)
+		respChan = make(chan []byte, 10)
+		closed   atomicBool
+		o        sync.Once
 	)
-	s.wg.Add(1)
+	var closeFunc = func() {
+		o.Do(func() {
+			closed.SetTrue()
+			close(reqChan)
+			close(respChan)
+			conn.Close()
+		})
+		if err := recover(); err != nil {
+			logrus.Errorf("panic: %s", err)
+		}
+	}
+	defer closeFunc()
+
 	go func() {
-		defer s.wg.Done()
-		defer func() {
-			recover()
-		}()
+		defer closeFunc()
 		for b := range reqChan {
-			if s.opt.Cipher != nil {
-				var err error
-				b, err = s.opt.Cipher.Decode(b)
-				if err != nil {
-					logrus.Errorf("cipher data failed: %s", err)
-					return
-				}
+			if closed.Bool() {
+				return
 			}
 			if _, err := conn.Write(b); err != nil {
 				return
 			}
 		}
 	}()
-	s.wg.Add(1)
 	go func() {
-		defer func() {
-			recover()
-		}()
-		defer s.wg.Done()
+		defer closeFunc()
 		for b := range respChan {
-			if s.opt.Cipher != nil {
-				var err error
-				b, err = s.opt.Cipher.Encode(b)
-				if err != nil {
-					logrus.Errorf("cipher data failed: %s", err)
-					return
-				}
+			if closed.Bool() {
+				return
 			}
 			if err := stream.Send(&proto.Response{
 				Body: b,
@@ -143,35 +120,33 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn)
 		}
 	}()
 	// recv
-	s.wg.Add(1)
 	go func() {
-		defer func() {
-			close(reqChan)
-			close(respChan)
-			atomic.StoreInt64(&closed, 1)
-			conn.Close()
-			s.wg.Done()
-		}()
-
-		defer func() {
-			recover()
-		}()
 		for {
+			if closed.Bool() {
+				return
+			}
 			req, err := stream.Recv()
 			if err != nil {
+				return
+			}
+			if closed.Bool() {
 				return
 			}
 			reqChan <- req.Body
 		}
 	}()
 	for {
+		if closed.Bool() {
+			return nil
+		}
 		var b = make([]byte, 1024)
 		n, err := conn.Read(b)
 		if err != nil {
 			return err
 		}
-		if atomic.LoadInt64(&closed) == 0 {
-			respChan <- b[:n]
+		if closed.Bool() {
+			return nil
 		}
+		respChan <- b[:n]
 	}
 }

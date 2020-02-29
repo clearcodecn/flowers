@@ -4,25 +4,20 @@ import (
 	"context"
 	"fmt"
 	"github.com/clearcodecn/flowers/proto"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 )
 
 type ClientProxyServer struct {
 	opt *Option
 
-	client proto.ProxyServiceClient
+	clientPool sync.Pool
 
 	ln net.Listener
-
-	wg sync.WaitGroup
 }
 
 type ClientProxyServerOptions struct {
@@ -40,24 +35,24 @@ func NewClientProxyServer(opts ...Options) (*ClientProxyServer, error) {
 	s := new(ClientProxyServer)
 	s.opt = o
 
-	// TODO:: add tls support
-	conn, err := grpc.Dial(o.ServerProxyAddress, grpc.WithInsecure())
-	if err != nil {
-		return nil, errors.Wrap(err, "can not create grpc connection")
+	s.clientPool.New = func() interface{} {
+		// TODO:: add tls support
+		conn, _ := grpc.Dial(o.ServerProxyAddress, grpc.WithInsecure())
+		return proto.NewProxyServiceClient(conn)
 	}
-
-	s.client = proto.NewProxyServiceClient(conn)
 
 	return s, nil
 }
+
+func (c *ClientProxyServer) GetClient() proto.ProxyServiceClient {
+	return c.clientPool.Get().(proto.ProxyServiceClient)
+}
+
+func (c *ClientProxyServer) ReleaseClient(client proto.ProxyServiceClient) {
+	c.clientPool.Put(client)
+}
+
 func (c *ClientProxyServer) Stop() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	go func() {
-		c.wg.Wait()
-		cancel()
-	}()
-	<-ctx.Done()
 	return c.ln.Close()
 }
 
@@ -108,7 +103,9 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
 		}
 	}
-	client, err := c.client.Proxy(context.Background())
+	client := c.GetClient()
+
+	stream, err := client.Proxy(context.Background())
 	if err != nil {
 		logrus.Errorf("connect server failed: %s", err)
 		return
@@ -116,47 +113,46 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 
 	logrus.Infof("proxy for: %s", host)
 
-	if c.opt.Cipher != nil {
-		b, err := c.opt.Cipher.Encode([]byte(host))
-		if err != nil {
-			logrus.Errorf("cipher data failed: %s", err)
-			return
-		}
-		host = string(b)
-	}
-
 	req := &proto.Request{
 		Host: host,
 	}
-	if err := client.Send(req); err != nil {
+	if err := stream.Send(req); err != nil {
 		logrus.Infof("can not connect to remote server: %s", err)
 		return
 	}
-	c.wg.Add(4)
 	var (
-		reqCh        = make(chan []byte, 10)
-		respCh       = make(chan []byte, 10)
-		closed int64 = 0
+		reqCh  = make(chan []byte, 10)
+		respCh = make(chan []byte, 10)
+		closed atomicBool
+		o      sync.Once
 	)
 	if http.MethodConnect != method {
 		reqCh <- b[:n]
 	}
 
+	var closeFunc = func() {
+		o.Do(func() {
+			closed.SetTrue()
+			close(reqCh)
+			close(respCh)
+			stream.CloseSend()
+		})
+
+		if err := recover(); err != nil {
+			logrus.Errorf("panic: %s", err)
+		}
+	}
+
+	defer closeFunc()
+
 	go func() {
-		defer c.wg.Done()
-		defer func() {
-			recover()
-		}()
+		defer closeFunc()
+
 		for b := range reqCh {
-			if c.opt.Cipher != nil {
-				var err error
-				b, err = c.opt.Cipher.Encode(b)
-				if err != nil {
-					logrus.Errorf("cipher data failed: %s", err)
-					return
-				}
+			if closed.Bool() {
+				return
 			}
-			if err := client.Send(&proto.Request{
+			if err := stream.Send(&proto.Request{
 				Body: b,
 			}); err != nil {
 				logrus.Errorf("can not request to server: %s", err)
@@ -165,16 +161,11 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 		}
 	}()
 	go func() {
-		recover()
-		defer c.wg.Done()
+		defer closeFunc()
+
 		for b := range respCh {
-			if c.opt.Cipher != nil {
-				var err error
-				b, err = c.opt.Cipher.Decode(b)
-				if err != nil {
-					logrus.Errorf("cipher data failed: %s", err)
-					return
-				}
+			if closed.Bool() {
+				return
 			}
 			if _, err := conn.Write(b); err != nil {
 				return
@@ -182,37 +173,36 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 		}
 	}()
 	go func() {
-		defer func() {
-			recover()
-			c.wg.Done()
-			close(reqCh)
-			close(respCh)
-			atomic.StoreInt64(&closed, 1)
-			conn.Close()
-			client.CloseSend()
-		}()
+		defer closeFunc()
 		for {
+			if closed.Bool() {
+				return
+			}
 			var b = make([]byte, 1024)
 			n, err := conn.Read(b)
 			if err != nil {
+				return
+			}
+			if closed.Bool() {
 				return
 			}
 			reqCh <- b[:n]
 		}
 	}()
 	go func() {
-		defer func() {
-			recover()
-		}()
-		defer c.wg.Done()
+		defer closeFunc()
 		for {
-			resp, err := client.Recv()
+			if closed.Bool() {
+				return
+			}
+			resp, err := stream.Recv()
 			if err != nil {
 				return
 			}
-			if atomic.LoadInt64(&closed) == 0 {
-				respCh <- resp.Body
+			if closed.Bool() {
+				return
 			}
+			respCh <- resp.Body
 		}
 	}()
 }

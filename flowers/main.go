@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/clearcodecn/flowers/cmd/client"
-	"github.com/clearcodecn/flowers/cmd/server"
+	"github.com/clearcodecn/flowers/flowers/client"
+	"github.com/clearcodecn/flowers/flowers/server"
 	"fmt"
 	"github.com/spf13/cobra"
 )
