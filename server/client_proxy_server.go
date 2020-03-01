@@ -137,6 +137,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			close(reqCh)
 			close(respCh)
 			stream.CloseSend()
+			c.ReleaseClient(client)
 		})
 
 		if err := recover(); err != nil {
