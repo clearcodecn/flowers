@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -11,27 +10,22 @@ import (
 //FindHost
 func FindHost(data []byte) (method string, host string, err error) {
 	arr := strings.Split(string(data), "\r\n")
-	if len(arr) < 2 {
-		err = errors.New("invalid http request part")
-		return
+	part := arr[0]
+	partArr := strings.Split(part, " ")
+	method = partArr[0]
+	if len(partArr) < 2 {
+		return "", "", errors.New("can not parse host:port in first header")
 	}
-	{
-		part := arr[0]
-		partArr := strings.Split(part, " ")
-		method = partArr[0]
+	hostPort := partArr[1]
+	if strings.Contains(hostPort, ":") {
+		return method, hostPort, nil
 	}
-	{
-		// Host:
-		host = arr[1][6:]
-		if !strings.Contains(host, ":") {
-			if method == http.MethodConnect {
-				host = net.JoinHostPort(host, "443")
-			} else {
-				host = net.JoinHostPort(host, "80")
-			}
-		}
+	if method == http.MethodConnect {
+		hostPort = hostPort + ":443"
+	} else {
+		hostPort = hostPort + ":80"
 	}
-	return
+	return method, hostPort, nil
 }
 
 type atomicBool int32

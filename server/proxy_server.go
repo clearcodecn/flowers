@@ -6,7 +6,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -66,16 +68,20 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 		// fist package
 		conn, err = net.Dial("tcp", req.Host)
 		if err != nil {
+			logrus.Errorf("can not dial: %s", req.Host)
 			return err
 		}
 		logrus.Infof("connected to: %s", req.Host)
 	} else {
 		return errors.Errorf("invalid host: %s", req.Host)
 	}
-	return s.pipe(stream, conn, req.Host)
+	done := make(chan struct{})
+	go s.handleProxy(stream, conn, done)
+	<-done
+	return nil
 }
 
-func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn, host string) error {
+func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn net.Conn, done chan struct{}) {
 	var (
 		reqChan  = make(chan []byte, 10)
 		respChan = make(chan []byte, 10)
@@ -84,51 +90,56 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn,
 	)
 	var closeFunc = func() {
 		o.Do(func() {
-			logrus.Infof("closed %s", host)
+			conn.Close()
 			closed.SetTrue()
 			close(reqChan)
 			close(respChan)
-			conn.Close()
+			close(done)
+			logrus.Infof("close conn")
 		})
 		if err := recover(); err != nil {
 			logrus.Errorf("panic: %s", err)
 		}
 	}
-	defer closeFunc()
-
 	go func() {
 		defer closeFunc()
 		for b := range reqChan {
-			if closed.Bool() {
-				return
-			}
 			if _, err := conn.Write(b); err != nil {
-				return
+				if err == io.EOF {
+					return
+				}
+				logrus.Errorf("write conn err: %s", err)
 			}
 		}
 	}()
 	go func() {
 		defer closeFunc()
 		for b := range respChan {
-			if closed.Bool() {
-				return
-			}
 			if err := stream.Send(&proto.Response{
 				Body: b,
 			}); err != nil {
-				return
+				if err == io.EOF || err == context.Canceled {
+					return
+				}
+				logrus.Errorf("send err: %s", err)
+				continue
 			}
 		}
 	}()
 	// recv
 	go func() {
+		defer closeFunc()
 		for {
 			if closed.Bool() {
 				return
 			}
 			req, err := stream.Recv()
 			if err != nil {
-				return
+				if err == io.EOF || err == context.Canceled {
+					return
+				}
+				logrus.Errorf("recv err: %s", err)
+				continue
 			}
 			if closed.Bool() {
 				return
@@ -136,18 +147,25 @@ func (s *ProxyServer) pipe(stream proto.ProxyService_ProxyServer, conn net.Conn,
 			reqChan <- req.Body
 		}
 	}()
-	for {
-		if closed.Bool() {
-			return nil
+	go func() {
+		defer closeFunc()
+		for {
+			if closed.Bool() {
+				return
+			}
+			var b = make([]byte, 1024)
+			n, err := conn.Read(b)
+			if err != nil {
+				if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
+					return
+				}
+				logrus.Errorf("can not read from remote: %s", err)
+				continue
+			}
+			if closed.Bool() {
+				return
+			}
+			respChan <- b[:n]
 		}
-		var b = make([]byte, 1024)
-		n, err := conn.Read(b)
-		if err != nil {
-			return err
-		}
-		if closed.Bool() {
-			return nil
-		}
-		respChan <- b[:n]
-	}
+	}()
 }

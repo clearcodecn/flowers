@@ -31,10 +31,17 @@ func run(cmd *cobra.Command, args []string) error {
 		server.WithServerProxyAddress(argServerAddress),
 		//server.WithCipher(argPassword),
 	)
+
+	go func() {
+		if err := s.Run(); err != nil {
+			logrus.Print("err: ", err)
+		}
+	}()
 	sig.RegisterClose(func() {
 		if err := s.Stop(); err != nil {
 			logrus.Errorf("server stop: %s", err)
 		}
 	})
-	return s.Run()
+	sig.HoldOn()
+	return nil
 }

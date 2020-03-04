@@ -6,6 +6,7 @@ import (
 	"github.com/clearcodecn/flowers/proto"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -72,7 +73,8 @@ func (c *ClientProxyServer) Run() error {
 			}
 			return err
 		}
-		go c.handleConn(conn)
+		dc := &debugConn{false, conn}
+		go c.handleConn(dc)
 	}
 }
 
@@ -131,6 +133,9 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	}
 
 	var closeFunc = func() {
+		if err := recover(); err != nil {
+			logrus.Errorf("panic: %s", err)
+		}
 		o.Do(func() {
 			logrus.Infof("closed %s", host)
 			closed.SetTrue()
@@ -139,18 +144,11 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			stream.CloseSend()
 			c.ReleaseClient(client)
 		})
-
-		if err := recover(); err != nil {
-			logrus.Errorf("panic: %s", err)
-		}
 	}
+
 	go func() {
 		defer closeFunc()
-
 		for b := range reqCh {
-			if closed.Bool() {
-				return
-			}
 			if err := stream.Send(&proto.Request{
 				Body: b,
 			}); err != nil {
@@ -161,13 +159,12 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	}()
 	go func() {
 		defer closeFunc()
-
 		for b := range respCh {
-			if closed.Bool() {
-				return
-			}
 			if _, err := conn.Write(b); err != nil {
-				return
+				if err == io.EOF {
+					return
+				}
+				logrus.Errorf("write from client failed: %s", err)
 			}
 		}
 	}()
@@ -180,7 +177,10 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			var b = make([]byte, 1024)
 			n, err := conn.Read(b)
 			if err != nil {
-				return
+				if err == io.EOF {
+					return
+				}
+				logrus.Errorf("read from client failed: %s", err)
 			}
 			if closed.Bool() {
 				return
