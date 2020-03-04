@@ -137,7 +137,7 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			req, err := stream.Recv()
 			if err != nil {
 				logrus.Errorf("recv err: %s", err)
-				continue
+				return
 			}
 			if closed.Bool() {
 				return
