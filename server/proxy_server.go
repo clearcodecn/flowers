@@ -78,6 +78,8 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 	done := make(chan struct{})
 	go s.handleProxy(stream, conn, done)
 	<-done
+
+	logrus.Infof("close conn proxy for: ", req.Host)
 	return nil
 }
 
@@ -95,7 +97,6 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			close(reqChan)
 			close(respChan)
 			close(done)
-			logrus.Infof("close conn")
 		})
 		if err := recover(); err != nil {
 			logrus.Errorf("panic: %s", err)
