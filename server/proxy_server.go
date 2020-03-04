@@ -106,7 +106,7 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 		defer closeFunc()
 		for b := range reqChan {
 			if _, err := conn.Write(b); err != nil {
-				if err == io.EOF {
+				if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
 					return
 				}
 				logrus.Errorf("write conn err: %s", err)
@@ -119,7 +119,7 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			if err := stream.Send(&proto.Response{
 				Body: b,
 			}); err != nil {
-				if err == io.EOF || err == context.Canceled {
+				if err == io.EOF {
 					return
 				}
 				logrus.Errorf("send err: %s", err)
@@ -136,9 +136,6 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			}
 			req, err := stream.Recv()
 			if err != nil {
-				if err == io.EOF || err == context.Canceled {
-					return
-				}
 				logrus.Errorf("recv err: %s", err)
 				continue
 			}
