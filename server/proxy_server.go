@@ -79,7 +79,7 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 	go s.handleProxy(stream, conn, done)
 	<-done
 
-	logrus.Infof("close conn proxy for: ", req.Host)
+	logrus.Infof("close conn proxy for: %s", req.Host)
 	return nil
 }
 
