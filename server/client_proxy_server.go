@@ -6,6 +6,7 @@ import (
 	"github.com/clearcodecn/flowers/proto"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -92,6 +93,22 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 		if method == http.MethodConnect {
 			_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
 		}
+
+		list := []string{"join.servers.getgo.com:443", "launch.getgo.com:443","203.119.247.189:443"}
+		for _, l := range list {
+			if host == l {
+				rr, err := net.Dial("tcp", l)
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				defer rr.Close()
+
+				go io.Copy(rr, conn)
+				io.Copy(conn, rr)
+				return
+			}
+		}
 	}
 	client := c.GetClient()
 
@@ -137,6 +154,9 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 	go func() {
 		defer closeFunc()
 		for b := range reqCh {
+			if c.opt.Codec != nil {
+				b = c.opt.Codec.Encode(b)
+			}
 			if err := stream.Send(&proto.Request{
 				Body: b,
 			}); err != nil {
@@ -181,6 +201,9 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			}
 			if closed.Bool() {
 				return
+			}
+			if c.opt.Codec != nil {
+				resp.Body = c.opt.Codec.Decode(resp.Body)
 			}
 			respCh <- resp.Body
 		}

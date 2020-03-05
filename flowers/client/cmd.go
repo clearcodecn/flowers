@@ -24,6 +24,7 @@ var (
 
 	argClientHTTPAddress string
 	argPassword          string
+	argDebug             bool
 )
 
 func init() {
@@ -31,13 +32,15 @@ func init() {
 	Cmd.Flags().StringVarP(&argServerAddress, "saddr", "s", "", "server listen grpc address")
 	Cmd.Flags().StringVarP(&argClientHTTPAddress, "haddr", "", "0.0.0.0:8011", "client http address")
 	Cmd.Flags().StringVarP(&argServerAddress, "password", "p", "helloworld", "server password")
+	Cmd.Flags().BoolVar(&argDebug, "debug", false, "is debug mode")
 }
 
 func run(cmd *cobra.Command, args []string) error {
 	client, err := server.NewClientProxyServer(
 		server.WithClientProxyAddress(argClientAddress),
 		server.WithServerProxyAddress(argServerAddress),
-		//server.WithCipher(argPassword),
+		server.WithCodec(),
+		server.Debug(argDebug),
 	)
 	if err != nil {
 		return err

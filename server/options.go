@@ -7,6 +7,8 @@ type Option struct {
 	ServerProxyAddress string
 
 	Debug bool
+
+	Codec Codec
 }
 
 type Options func(*Option)
@@ -32,5 +34,11 @@ func WithServerProxyAddress(address string) Options {
 func Debug(d bool) Options {
 	return func(o *Option) {
 		o.Debug = d
+	}
+}
+
+func WithCodec() Options {
+	return func(option *Option) {
+		option.Codec = new(CompressCodec)
 	}
 }

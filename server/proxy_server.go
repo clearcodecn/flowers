@@ -111,6 +111,9 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 	go func() {
 		defer closeFunc()
 		for b := range respChan {
+			if s.opt.Codec != nil {
+				b = s.opt.Codec.Encode(b)
+			}
 			if err := stream.Send(&proto.Response{
 				Body: b,
 			}); err != nil {
@@ -131,6 +134,9 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			}
 			if closed.Bool() {
 				return
+			}
+			if s.opt.Codec != nil {
+				req.Body = s.opt.Codec.Encode(req.Body)
 			}
 			reqChan <- req.Body
 		}

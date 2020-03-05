@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -9,6 +10,9 @@ import (
 
 //FindHost
 func FindHost(data []byte) (method string, host string, err error) {
+
+	fmt.Println(string(data))
+
 	arr := strings.Split(string(data), "\r\n")
 	part := arr[0]
 	partArr := strings.Split(part, " ")
