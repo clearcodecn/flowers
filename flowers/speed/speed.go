@@ -185,7 +185,7 @@ func runClient(cmd *cobra.Command, args []string) error {
 		}
 	result:
 		t2 := time.Now()
-		speed := float64(totalSize) / float64(t2.Sub(t).Nanoseconds()) / 1024 * 1e9 / 1024
+		speed := float64(totalSize) / float64(t2.Sub(t).Nanoseconds()) / 1024 * 1e9
 		log.Println(fmt.Sprintf("finished -> upload speed is :  %s", LogSpeed(speed)))
 		upSeppd = speed
 	}
@@ -240,10 +240,10 @@ func runClient(cmd *cobra.Command, args []string) error {
 	}
 
 	if argUp {
-		log.Println(fmt.Sprintf("finished: upload speed is : %f mb/s", upSeppd/1024))
+		log.Println(fmt.Sprintf("finished: upload speed is :  %s", LogSpeed(upSeppd)))
 	}
 	if argDown {
-		log.Println(fmt.Sprintf("finished: download speed is : %f mb/s", downSpeed/1024))
+		log.Println(fmt.Sprintf("finished: download speed is : %s", LogSpeed(downSpeed)))
 	}
 	return nil
 }
