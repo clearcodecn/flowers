@@ -5,6 +5,8 @@ type Option struct {
 	ClientProxyAddress string
 
 	ServerProxyAddress string
+
+	Debug bool
 }
 
 type Options func(*Option)
@@ -24,5 +26,11 @@ func WithClientProxyAddress(address string) Options {
 func WithServerProxyAddress(address string) Options {
 	return func(options *Option) {
 		options.ServerProxyAddress = address
+	}
+}
+
+func Debug(d bool) Options {
+	return func(o *Option) {
+		o.Debug = d
 	}
 }

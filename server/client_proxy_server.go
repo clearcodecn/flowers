@@ -6,10 +6,8 @@ import (
 	"github.com/clearcodecn/flowers/proto"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-	"io"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 )
 
@@ -19,13 +17,6 @@ type ClientProxyServer struct {
 	clientPool sync.Pool
 
 	ln net.Listener
-}
-
-type ClientProxyServerOptions struct {
-	Address       string
-	ServerAddress string
-
-	Password string
 }
 
 func NewClientProxyServer(opts ...Options) (*ClientProxyServer, error) {
@@ -68,12 +59,9 @@ func (c *ClientProxyServer) Run() error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			if strings.Contains(err.Error(), "use of closed network connection") {
-				return nil
-			}
 			return err
 		}
-		dc := &debugConn{false, conn}
+		dc := &debugConn{c.opt.Debug, conn}
 		go c.handleConn(dc)
 	}
 }
@@ -152,7 +140,6 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			if err := stream.Send(&proto.Request{
 				Body: b,
 			}); err != nil {
-				logrus.Errorf("can not request to server: %s", err)
 				return
 			}
 		}
@@ -161,10 +148,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 		defer closeFunc()
 		for b := range respCh {
 			if _, err := conn.Write(b); err != nil {
-				if err == io.EOF {
-					return
-				}
-				logrus.Errorf("write from client failed: %s", err)
+				return
 			}
 		}
 	}()
@@ -177,10 +161,7 @@ func (c *ClientProxyServer) handleConn(conn net.Conn) {
 			var b = make([]byte, 1024)
 			n, err := conn.Read(b)
 			if err != nil {
-				if err == io.EOF {
-					return
-				}
-				logrus.Errorf("read from client failed: %s", err)
+				return
 			}
 			if closed.Bool() {
 				return

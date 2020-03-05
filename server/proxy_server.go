@@ -6,9 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-	"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 )
@@ -76,7 +74,7 @@ func (s *ProxyServer) Proxy(stream proto.ProxyService_ProxyServer) error {
 		return errors.Errorf("invalid host: %s", req.Host)
 	}
 	done := make(chan struct{})
-	go s.handleProxy(stream, conn, done)
+	go s.handleProxy(stream, &debugConn{isDebug: s.opt.Debug, Conn: conn}, done)
 	<-done
 
 	logrus.Infof("close conn proxy for: %s", req.Host)
@@ -106,10 +104,7 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 		defer closeFunc()
 		for b := range reqChan {
 			if _, err := conn.Write(b); err != nil {
-				if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
-					return
-				}
-				logrus.Errorf("write conn err: %s", err)
+				return
 			}
 		}
 	}()
@@ -119,11 +114,7 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			if err := stream.Send(&proto.Response{
 				Body: b,
 			}); err != nil {
-				if err == io.EOF {
-					return
-				}
-				logrus.Errorf("send err: %s", err)
-				continue
+				return
 			}
 		}
 	}()
@@ -136,7 +127,6 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			}
 			req, err := stream.Recv()
 			if err != nil {
-				logrus.Errorf("recv err: %s", err)
 				return
 			}
 			if closed.Bool() {
@@ -154,11 +144,7 @@ func (s *ProxyServer) handleProxy(stream proto.ProxyService_ProxyServer, conn ne
 			var b = make([]byte, 1024)
 			n, err := conn.Read(b)
 			if err != nil {
-				if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
-					return
-				}
-				logrus.Errorf("can not read from remote: %s", err)
-				continue
+				return
 			}
 			if closed.Bool() {
 				return
