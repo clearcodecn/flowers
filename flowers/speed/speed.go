@@ -118,7 +118,7 @@ func handleConn(conn net.Conn) {
 				break
 			}
 			totalSize += n
-			i++
+			i = i + 2
 		}
 		t2 := time.Now()
 		speed := float64(totalSize) / float64(t2.Sub(t).Nanoseconds()) / 1024 * 1e9
@@ -165,7 +165,7 @@ func runClient(cmd *cobra.Command, args []string) error {
 				break
 			}
 			totalSize += n
-			i = i * 2
+			i = i + 2
 			select {
 			case <-tick.C:
 				tick.Stop()
