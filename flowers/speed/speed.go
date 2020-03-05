@@ -178,7 +178,7 @@ func runClient(cmd *cobra.Command, args []string) error {
 			select {
 			case <-seTk.C:
 				x := float64(time.Now().Sub(t).Nanoseconds())
-				speed := float64(totalSize) / x / 1024 * 1000 * 1000 * 1e9
+				speed := float64(totalSize) / x / 1024 * 1e9
 				log.Println(fmt.Sprintf("upload speed is :  %s", LogSpeed(speed)))
 			default:
 			}
