@@ -1,9 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"github.com/clearcodecn/flowers/flowers/client"
 	"github.com/clearcodecn/flowers/flowers/server"
-	"fmt"
+	"github.com/clearcodecn/flowers/flowers/speed"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +19,7 @@ func init() {
 	rootCmd.AddCommand(
 		client.Cmd,
 		server.Cmd,
+		speed.Cmd,
 	)
 }
 
