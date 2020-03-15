@@ -1,21 +1,17 @@
 # flowers 
-
-> simple and powerful proxy over http2/grpc 
-> support http/https/socks5
+> simple salt proxy 
 
 
-# Installation 
-```shell script
-go get github.com/clearcodecn/flowers/...
+## 1. run server
+
+``` 
+ ./server -a :9898 
+
+> output password. 
 ```
 
-# Run Server
+## 2. run client 
 
 ```shell script
-flowers server -p password
-```
-
-# Run Client 
-```shell script
-flowers client -a 0.0.0.0:9011 -s 127.0.0.1:9012 -p password
+./client -s [ip]:9898 -p [password] -l 1080
 ```

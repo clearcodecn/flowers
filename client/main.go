@@ -1,12 +1,136 @@
-package server
+package main
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"flag"
+	"fmt"
+	"github.com/clearcodecn/flowers/password"
+	"github.com/sirupsen/logrus"
 	"io"
 	"net"
+	"net/http"
 	"strconv"
+	"strings"
 )
+
+var (
+	pswd  string
+	saddr string
+	laddr string
+
+	p []byte
+)
+
+func init() {
+	flag.StringVar(&pswd, "p", "", "password")
+	flag.StringVar(&saddr, "s", ":9898", "server address")
+	flag.StringVar(&laddr, "l", ":1080", "local address")
+}
+
+func main() {
+	flag.Parse()
+
+	p, _ = base64.StdEncoding.DecodeString(pswd)
+
+	if len(p) == 0 {
+		fmt.Println("密码错误")
+		return
+	}
+
+	ln, err := net.Listen("tcp", laddr)
+	if err != nil {
+		logrus.Print(err)
+		return
+	}
+	logrus.Infof("client proxy running at: %s", laddr)
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			logrus.Print(err)
+			return
+		}
+		go handleConn(conn)
+	}
+}
+
+func handleConn(conn net.Conn) {
+	var b = make([]byte, 1024)
+	n, err := conn.Read(b)
+	if err != nil {
+		logrus.Errorf("read local connection failed: %s", err)
+		return
+	}
+	var (
+		method, host string
+	)
+	host, err = handleSS5(b[:n], conn)
+	if err == nil {
+		b = b[:]
+		n, err = conn.Read(b)
+		if err != nil {
+			return
+		}
+	} else {
+		method, host, err = FindHost(b[:n])
+		if err != nil {
+			logrus.Errorf("parse hostPort failed: %s %s", err)
+			return
+		}
+		if method == http.MethodConnect {
+			_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
+		}
+	}
+
+	l := len(host)
+	var pkg = make([]byte, 2)
+	binary.BigEndian.PutUint16(pkg, uint16(l))
+	pkg = append(pkg, host...)
+
+	dst, err := net.Dial("tcp", saddr)
+	if err != nil {
+		logrus.Print(err)
+		return
+	}
+
+	logrus.Println("proxy: ", host)
+	cc := password.NewPasswordRW(p, dst)
+	cc.Write(pkg)
+
+	if method != http.MethodConnect {
+		cc.Write(b[:n])
+	}
+
+	go io.Copy(cc, conn)
+	io.Copy(conn, cc)
+}
+
+//FindHost
+func FindHost(data []byte) (method string, host string, err error) {
+	arr := strings.Split(string(data), "\r\n")
+	part := arr[0]
+	partArr := strings.Split(part, " ")
+	method = partArr[0]
+	if len(partArr) < 2 {
+		return "", "", errors.New("can not parse host:port in first header")
+	}
+
+	for _, v := range arr[1:] {
+		if strings.HasPrefix(v, "Host: ") {
+			host := strings.TrimPrefix(v, "Host: ")
+			if strings.Contains(host, ":") {
+				return method, host, nil
+			}
+			if method == http.MethodConnect {
+				return method, fmt.Sprintf("%s:%s", host, "443"), nil
+			}
+			return method, fmt.Sprintf("%s:%s", host, "80"), nil
+		}
+	}
+
+	return method, "", errors.New("can not find host and port")
+}
 
 const (
 	idVer           = 0
@@ -24,7 +148,7 @@ var (
 	errCmd           = errors.New("socks command not supported")
 )
 
-func (c *ClientProxyServer) handleSS5(buf []byte, conn net.Conn) (hostPort string, err error) {
+func handleSS5(buf []byte, conn net.Conn) (hostPort string, err error) {
 	if len(buf) > 258 {
 		return "", errVer
 	}
