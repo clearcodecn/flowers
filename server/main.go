@@ -34,12 +34,12 @@ func main() {
 		if os.IsNotExist(err) {
 			pswd = password.RandPassword()
 			x := base64.StdEncoding.EncodeToString(pswd)
-			fmt.Println("密码: ", string(x))
+			fmt.Println("password is: ", string(x))
 			ioutil.WriteFile(file, []byte(x), 0777)
 		}
 	} else {
 		data, _ := ioutil.ReadFile(file)
-		fmt.Println("密码: ", string(data))
+		fmt.Println("password is: ", string(data))
 		pswd, _ = base64.StdEncoding.DecodeString(string(data))
 	}
 
@@ -61,11 +61,10 @@ func main() {
 	}
 }
 
+// TODO:: keep alive with dst.
 func handleConn(conn net.Conn) {
 	defer conn.Close()
-
 	pcc := password.NewPasswordRW(pswd, conn)
-
 	// read host & port
 	var b = make([]byte, 2)
 	n, err := pcc.Read(b)
@@ -80,17 +79,15 @@ func handleConn(conn net.Conn) {
 		log.Println(err)
 		return
 	}
-
 	hostPort := string(b[:n])
-
 	dst, err := net.Dial("tcp", hostPort)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+	defer dst.Close()
 
 	log.Println("proxy", hostPort)
-
 	go io.Copy(dst, pcc)
 	io.Copy(pcc, dst)
 }

@@ -7,8 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/clearcodecn/flowers/password"
-	"github.com/sirupsen/logrus"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -35,31 +35,34 @@ func main() {
 	p, _ = base64.StdEncoding.DecodeString(pswd)
 
 	if len(p) == 0 {
-		fmt.Println("密码错误")
+		fmt.Println("password can not be empty")
 		return
 	}
 
 	ln, err := net.Listen("tcp", laddr)
 	if err != nil {
-		logrus.Print(err)
+		log.Println(err)
 		return
 	}
-	logrus.Infof("client proxy running at: %s", laddr)
+	log.Infof("client proxy running at: %s", laddr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			logrus.Print(err)
+			log.Println(err)
 			return
 		}
 		go handleConn(conn)
 	}
 }
 
+// TODO:: keep alive with dst
 func handleConn(conn net.Conn) {
+	defer conn.Close()
+	
 	var b = make([]byte, 1024)
 	n, err := conn.Read(b)
 	if err != nil {
-		logrus.Errorf("read local connection failed: %s", err)
+		log.Println("read local connection failed:", err)
 		return
 	}
 	var (
@@ -75,7 +78,7 @@ func handleConn(conn net.Conn) {
 	} else {
 		method, host, err = FindHost(b[:n])
 		if err != nil {
-			logrus.Errorf("parse hostPort failed: %s %s", err)
+			log.Println("parse hostPort failed:", err)
 			return
 		}
 		if method == http.MethodConnect {
@@ -90,11 +93,13 @@ func handleConn(conn net.Conn) {
 
 	dst, err := net.Dial("tcp", saddr)
 	if err != nil {
-		logrus.Print(err)
+		log.Print(err)
 		return
 	}
 
-	logrus.Println("proxy: ", host)
+	defer dst.Close()
+
+	log.Println("proxy: ", host)
 	cc := password.NewPasswordRW(p, dst)
 	cc.Write(pkg)
 
@@ -115,7 +120,6 @@ func FindHost(data []byte) (method string, host string, err error) {
 	if len(partArr) < 2 {
 		return "", "", errors.New("can not parse host:port in first header")
 	}
-
 	for _, v := range arr[1:] {
 		if strings.HasPrefix(v, "Host: ") {
 			host := strings.TrimPrefix(v, "Host: ")
