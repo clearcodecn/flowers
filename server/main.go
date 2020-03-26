@@ -72,6 +72,10 @@ func handleConn(conn net.Conn) {
 		log.Println(err)
 		return
 	}
+	//	header长度， uint16 解码得出domain的长度
+	//	-----------------
+	//	   2  |   domain
+	//	------------------
 	l := binary.BigEndian.Uint16(b[:n])
 	b = make([]byte, l)
 	n, err = pcc.Read(b)
@@ -79,6 +83,7 @@ func handleConn(conn net.Conn) {
 		log.Println(err)
 		return
 	}
+	// 得到remote的host和port，建立连接
 	hostPort := string(b[:n])
 	dst, err := net.Dial("tcp", hostPort)
 	if err != nil {
@@ -88,6 +93,7 @@ func handleConn(conn net.Conn) {
 	defer dst.Close()
 
 	log.Println("proxy", hostPort)
+	// 然后 pipe 数据
 	go io.Copy(dst, pcc)
 	io.Copy(pcc, dst)
 }

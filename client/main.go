@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/clearcodecn/flowers/ad"
 	"github.com/clearcodecn/flowers/password"
 	"io"
 	"log"
@@ -20,17 +21,28 @@ var (
 	saddr string
 	laddr string
 
+	passAd bool
+
 	p []byte
 )
+
+var filterDomain = func(host string) bool {
+	return false
+}
 
 func init() {
 	flag.StringVar(&pswd, "p", "", "password")
 	flag.StringVar(&saddr, "s", ":9898", "server address")
 	flag.StringVar(&laddr, "l", ":1080", "local address")
+	flag.BoolVar(&passAd, "ad", false, "pass ad")
 }
 
 func main() {
 	flag.Parse()
+
+	if passAd {
+		filterDomain = ad.FilterAdDomain()
+	}
 
 	p, _ = base64.StdEncoding.DecodeString(pswd)
 
@@ -38,13 +50,12 @@ func main() {
 		fmt.Println("password can not be empty")
 		return
 	}
-
 	ln, err := net.Listen("tcp", laddr)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	log.Infof("client proxy running at: %s", laddr)
+	log.Println("client proxy running at:", laddr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -55,10 +66,9 @@ func main() {
 	}
 }
 
-// TODO:: keep alive with dst
 func handleConn(conn net.Conn) {
 	defer conn.Close()
-	
+
 	var b = make([]byte, 1024)
 	n, err := conn.Read(b)
 	if err != nil {
@@ -68,6 +78,7 @@ func handleConn(conn net.Conn) {
 	var (
 		method, host string
 	)
+	// 尝试解析 socks5 协议，如果不是，那么就用http(s)协议
 	host, err = handleSS5(b[:n], conn)
 	if err == nil {
 		b = b[:]
@@ -81,8 +92,19 @@ func handleConn(conn net.Conn) {
 			log.Println("parse hostPort failed:", err)
 			return
 		}
+		// 如果是 https 协议，给本地连接发送一个已经连接的初始包
 		if method == http.MethodConnect {
 			_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
+		}
+	}
+
+	if passAd {
+		h := strings.Split(host, ":")
+		if filterDomain(h[0]) {
+			conn.Close()
+
+			log.Println("block domain host: ", host)
+			return
 		}
 	}
 
@@ -91,6 +113,7 @@ func handleConn(conn net.Conn) {
 	binary.BigEndian.PutUint16(pkg, uint16(l))
 	pkg = append(pkg, host...)
 
+	// 连接服务器
 	dst, err := net.Dial("tcp", saddr)
 	if err != nil {
 		log.Print(err)
@@ -103,10 +126,11 @@ func handleConn(conn net.Conn) {
 	cc := password.NewPasswordRW(p, dst)
 	cc.Write(pkg)
 
+	// 发送剩余的数据
 	if method != http.MethodConnect {
 		cc.Write(b[:n])
 	}
-
+	// 开始传输数据
 	go io.Copy(cc, conn)
 	io.Copy(conn, cc)
 }
