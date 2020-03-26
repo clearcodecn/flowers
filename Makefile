@@ -1,2 +1,2 @@
 release:
-	@gorelease release --skip-publishgs
+	@goreleaser release --skip-publish
